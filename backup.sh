@@ -8,6 +8,7 @@ HOST=localhost
 PORT=5432
 USER=postgres
 PASSWORD=""
+PASSWORDFILE=""
 DESTINATION="."
 NAME="%Y%m%d-%H%M%S.sql"
 DB=""
@@ -34,6 +35,7 @@ Usage:
     -p port         Specify port of daemon, defaults to 5432
     -u user         User to authenticate with at database, defaults to postgres.
     -w password     Password for user, defaults to empty
+    -W path         Same as -w, but read content of password from file instead
     -d destination  Directory where to place (and rotate) backups.
     -n basename     Basename for file to create, date-tags allowed, defaults to: %Y%m%d-%H%M%S.sql
     -k keep         Number of backups to keep, defaults to empty, meaning keep all backups
@@ -45,7 +47,7 @@ USAGE
 
 
 # Parse options 
-while getopts ":k:h:p:u:w:d:n:b:vt:" opt; do
+while getopts ":k:h:p:u:w:d:n:b:vt:W:" opt; do
     case $opt in
         k)
             KEEP="$OPTARG"
@@ -55,6 +57,9 @@ while getopts ":k:h:p:u:w:d:n:b:vt:" opt; do
             ;;
         w)
             PASSWORD="$OPTARG"
+            ;;
+        W)
+            PASSWORDFILE="$OPTARG"
             ;;
         h)
             HOST="$OPTARG"
@@ -100,6 +105,9 @@ log() {
     fi
 }
 
+if [ -n "$PASSWORDFILE" ]; then
+    PASSWORD=$(cat $PASSWORDFILE)
+fi
 export PGPASSWORD=$PASSWORD
 FILE=$(date +$NAME)
 if [ -z "${DB}" ]; then

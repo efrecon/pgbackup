@@ -7,7 +7,7 @@ This project covers two intertwined usecases:
    `backup.sh`. 
 2. Continuous and regular copying of these dumps in a compressed for to a
    (supposedly) remote directory in order to facilitate offsite backup and
-   recovery in case of disasters. This is `offline.sh`.
+   recovery in case of disasters. This is `offsite.sh`.
 
 The project is tuned for usage within a Dockerised environment and each tool
 described below performs only one backup or compression.  Typical scenarios will
@@ -25,7 +25,7 @@ file `docker-compose.yml` starts up the following containers:
 1. `db`, an instance of the PostgreSQL database.
 2. `pgbackup`, which runs `backup.sh` once and will perform a backup of all
    databases when it starts.
-3. `davbackup`, which runs `offline.sh` once and will copy the latest backup to
+3. `davbackup`, which runs `offsite.sh` once and will copy the latest backup to
    another volume in compressed form. This could be a WebDAV mounted volume,
    even though it isn't since this is just an example.
 4. `pulse`, runs an instance of `efrecon/dockron` and will restart the two
@@ -54,6 +54,7 @@ Usage:
     -p port         Specify port of daemon, defaults to 5432
     -u user         User to authenticate with at database, defaults to postgres.
     -w password     Password for user, defaults to empty
+    -W path         Same as -w, but read content of password from file instead
     -d destination  Directory where to place (and rotate) backups.
     -n basename     Basename for file to create, date-tags allowed, defaults to: %Y%m%d-%H%M%S.sql
     -k keep         Number of backups to keep, defaults to empty, meaning keep all backups
@@ -61,7 +62,7 @@ Usage:
     -t command      Command to execute once done, path to backup will be passed as an argument.
 ```
 
-### `offline.sh`
+### `offsite.sh`
 
 This shell (not bash) script has the following options:
 
@@ -80,7 +81,8 @@ Usage:
     -d destination  Directory where to place (and rotate) compressed copies, default to current dir
     -k keep         Number of compressed copies to keep, defaults to empty, meaning all
     -c level        Compression level, defaults to 0, meaning no compression
-    -p password     Password for compressed archive, only when zip available
+    -w password     Password for compressed archive, only when zip available
+    -W path         Same as -w, but read content of password from file instead
     -t command      Command to execute once done, path to copy will be passed as an argument
 ```
 

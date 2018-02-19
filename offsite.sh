@@ -30,7 +30,8 @@ Usage:
     -d destination  Directory where to place (and rotate) compressed copies, default to current dir
     -k keep         Number of compressed copies to keep, defaults to empty, meaning all
     -c level        Compression level, defaults to 0, meaning no compression
-    -p password     Password for compressed archive, only when zip available
+    -w password     Password for compressed archive, only when zip available
+    -W path         Same as -w, but read content of password from file instead
     -t command      Command to execute once done, path to copy will be passed as an argument
 USAGE
   exit "$exitcode"
@@ -38,7 +39,7 @@ USAGE
 
 
 # Parse options 
-while getopts ":k:s:d:c:vt:p:" opt; do
+while getopts ":k:s:d:c:vt:w:W:" opt; do
     case $opt in
         k)
             KEEP="$OPTARG"
@@ -55,8 +56,11 @@ while getopts ":k:s:d:c:vt:p:" opt; do
         t)
             THEN="$OPTARG"
             ;;
-        p)
+        w)
             PASSWORD="$OPTARG"
+            ;;
+        W)
+            PASSWORD=$(cat "$OPTARG")
             ;;
         \?)
             echo "Invalid option: $opt" >& 2
