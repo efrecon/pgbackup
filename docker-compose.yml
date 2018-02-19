@@ -1,0 +1,137 @@
+# We use version 2 of the file format, migrating to 3.x is left as an exercise
+# to the reader and out of the scope of this project as the compose file only
+# serves as an example.
+version: '2.1'
+
+####
+# We separate data in a number of volumes to ensure that data will remain even
+# though containers are recreated for whatever reasons, and including over
+# version migrations.
+volumes:
+  # PostgreSQL local data
+  postgres:
+
+  # Clear text dump of the entire database content
+  pgbackup:
+
+  # The volume below is a cheat to exemplify remote backup.  We use a local
+  # volume for the example, but using the fentas/davfs docker volume plugin
+  # would allow for remote WebDAV backup. There are many other ways to
+  # store/mount data offsite.
+  webdav:
+
+
+####
+# Declare a network
+networks:
+  backend:
+
+
+services:
+  #####
+  # This is the latest (10.2 at the time of writing) postgres container. We
+  # select the Alpine version to minimise the size of the image to enable
+  # quicker restarts.  Note that this is based on a healthcheck capable postgres
+  # that is automatically built on top of the official Docker container.
+  db:
+    image: efrecon/postgres:10.2-alpine
+    environment:
+      - POSTGRES_PASSWORD=J4ekK3QFqBHpgq4XyBEJ7ygL
+      - POSTGRES_USER=postgres
+    volumes:
+      - postgres:/var/lib/postgresql/data
+    restart: always
+    logging:
+        driver: "json-file"
+        options:
+            max-size: "1m"
+            max-file: "10"
+    networks:
+      - backend
+
+  #####
+  # Performs ONE single backup of the database and wait for ever once done. This
+  # arranges for removing old backups as this container will be restarting at
+  # regular intervals.  Note that the backup container is kept running (idle) at
+  # all time to ensure that the cron scheduler container can always find it.
+  pgbackup:
+    image: efrecon/pgbackup
+    volumes:
+      - pgbackup:/backup
+    entrypoint: "/usr/local/bin/backup.sh"
+    command: >-
+      -h "db"
+      -u "postgres"
+      -w "J4ekK3QFqBHpgq4XyBEJ7ygL"
+      -d "/backup"
+      -k 10
+      -v
+      -t "sh -c \"while true ; do sleep 1 ; done\""
+    restart: on-failure
+    depends_on:
+      - db
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "1m"
+        max-file: "10"
+    networks:
+      - backend
+
+  #####
+  # Performs ONE single copy of the latest backup of the database and wait for
+  # ever once done. This arranges for removing old copies as this container will
+  # be restarting at regular intervals.  Note that the WebDAV copying container
+  # is kept running (idle) at all time to ensure that the cron scheduler
+  # container can always find it.  The password is used to encrypt content in
+  # the ZIP file in order to increase security at the remote storage provider
+  # and minimise eavesdropping.
+  davbackup:
+    image: efrecon/pgbackup
+    volumes:
+      - pgbackup:/mnt/src:ro
+      - webdav:/mnt/dst
+    entrypoint: "/usr/local/bin/offline.sh"
+    command: >-
+      -d /mnt/dst/backup/db/
+      -c 9
+      -p "cGm9rqb9sutjvh4XYXGTgTJp"
+      -k 20
+      -v
+      -t "sh -c \"while true ; do sleep 1 ; done\""
+      /mnt/src/*.sql
+    restart: on-failure
+    depends_on:
+      - db
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "1m"
+        max-file: "10"
+    networks:
+      - backend
+
+
+  ######
+  # Restarts the backup-related containers at regular intervals to make sure
+  # they perform as expected.  Database backups are created every 5 minutes, and
+  # ZIP copies are sent to a "remote" server 3 times an hour.
+  pulse:
+    image: efrecon/dockron
+    restart: always
+    volumes:
+      - /var/run/docker.sock:/tmp/docker.sock
+    command: >-
+      -rules
+        "*/5 * * * * *pgbackup* restart \"\"
+         4,24,44 * * * * *davbackup* restart \"\"
+        "
+      -verbose INFO
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "1m"
+        max-file: "10"
+    networks:
+      - backend
+      
