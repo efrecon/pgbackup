@@ -60,7 +60,22 @@ Usage:
     -k keep         Number of backups to keep, defaults to empty, meaning keep all backups
     -b database     Name of database to backup, defaults to empty, meaning all databases
     -t command      Command to execute once done, path to backup will be passed as an argument.
+    -o output       Output type: sql or csv (only tables content).
 ```
+
+When the `output` type is `sql`, an entire dump of the database(s) will be
+generated using [`pg_dump`][dump] or [`pg_dumpall`][dumpall]. When the `output`
+type is `csv`, a sub-directory of the `destination` directory will be created
+using the `basename`. Under this directory, there will be as many directories
+created as there are databases to dump, with the same name as the database. In
+these, one file for each table will be created, with the same name as the table
+and the extension `.csv`.
+
+CSV output do **not** capture anything else than the data itself, meaning that
+no functions, triggers, etc. can be backed up using this mechanism.
+
+  [dump]: https://www.postgresql.org/docs/10/static/app-pgdump.html
+  [dumpall]: https://www.postgresql.org/docs/10/static/app-pg-dumpall.html
 
 ### `offsite.sh`
 
