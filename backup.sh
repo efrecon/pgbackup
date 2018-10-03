@@ -121,10 +121,10 @@ csv_dump() {
     local db=$1
 
     log "Starting $OUTPUT backup of database $db to $FILE"
-    mkdir -p $FILE/$db
+    mkdir -p ${DESTINATION}/$FILE/$db
     TABLES=$(echo "SELECT table_schema || '.' || table_name FROM information_schema.tables WHERE table_type = 'BASE TABLE' AND table_schema NOT IN ('pg_catalog', 'information_schema');" | psql -h $HOST -p $PORT -U $USER -d $db -q -t)
     for table in $TABLES; do
-        DST=$FILE/$db/${table}.csv
+        DST=${DESTINATION}/$FILE/$db/${table}.csv
         log "Dumping $table to $DST"
         echo "COPY $table TO STDOUT WITH CSV HEADER;" | psql -h $HOST -p $PORT -U $USER -d $db > $DST
     done
