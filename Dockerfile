@@ -1,4 +1,4 @@
-FROM alpine:3.7
+FROM alpine:3.10.2
 
 # Re-define the entire config
 RUN apk add --no-cache postgresql-client zip
