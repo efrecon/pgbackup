@@ -163,7 +163,7 @@ if [ "$OUTPUT" = "sql" ]; then
     # from disk.
     if $CMD; then
         if [ -n "${PENDING}" ]; then
-            mv -f "${DSTFILE}" "${FILE}"
+            mv -f "${DESTINATION}/${DSTFILE}" "${DESTINATION}/${FILE}"
         fi
         log "Backup done"
     else
