@@ -11,6 +11,7 @@ PASSWORD=""
 PASSWORDFILE=""
 DESTINATION="."
 NAME="%Y%m%d-%H%M%S.sql"
+PENDING=".pending"
 DB=""
 THEN=""
 OUTPUT="sql"
@@ -43,13 +44,14 @@ Usage:
     -b database     Name of database to backup, defaults to empty, meaning all databases
     -t command      Command to execute once done, path to backup will be passed as an argument.
     -o output       Output type: sql or csv (only tables content).
+    -P pending      Extension to give to file while creating backup
 USAGE
   exit "$exitcode"
 }
 
 
 # Parse options 
-while getopts ":k:h:p:u:w:d:n:b:vt:W:o:" opt; do
+while getopts ":k:h:p:u:w:d:n:b:vt:W:o:P:" opt; do
     case $opt in
         k)
             KEEP="$OPTARG"
@@ -89,6 +91,9 @@ while getopts ":k:h:p:u:w:d:n:b:vt:W:o:" opt; do
             ;;
         o)
             OUTPUT="$OPTARG"
+            ;;
+        P)
+            PENDING="$OPTARG"
             ;;
         \?)
             echo "Invalid option: $opt" >& 2
@@ -137,19 +142,33 @@ export PGPASSWORD=$PASSWORD
 FILE=$(date +$NAME)
 
 if [ "$OUTPUT" = "sql" ]; then
-    if [ -z "${DB}" ]; then
-        log "Starting $OUTPUT backup of all databases to $FILE"
-        CMD="pg_dumpall -h $HOST -p $PORT -U $USER -w -f ${DESTINATION}/$FILE"
-    else 
-        log "Starting $OUTPUT backup of database $DB to $FILE"
-        CMD="pg_dump -h $HOST -p $PORT -U $USER -w -f ${DESTINATION}/$FILE $DB"
+    # Decide name of destination file, this takes into account the pending
+    # extension, if relevant.
+    if [ -n "${PENDING}" ]; then
+        DSTFILE=${FILE}.${PENDING##.}
+    else
+        DSTFILE=${FILE}
     fi
 
+    # Dump one or all database to the destination file.
+    if [ -z "${DB}" ]; then
+        log "Starting $OUTPUT backup of all databases to $FILE"
+        CMD="pg_dumpall -h $HOST -p $PORT -U $USER -w -f ${DESTINATION}/$DSTFILE"
+    else 
+        log "Starting $OUTPUT backup of database $DB to $FILE"
+        CMD="pg_dump -h $HOST -p $PORT -U $USER -w -f ${DESTINATION}/$DSTFILE $DB"
+    fi
+
+    # Install (pending) backup file into proper name if relevant, or remove it
+    # from disk.
     if $CMD; then
+        if [ -n "${PENDING}" ]; then
+            mv -f "${DSTFILE}" "${FILE}"
+        fi
         log "Backup done"
     else
         echo "Could not create backup!" >& 2
-        rm -rf ${DESTINATION}/$FILE
+        rm -rf ${DESTINATION}/$DSTFILE
     fi
 elif [ "$OUTPUT" = "csv" ]; then
     if [ -z "${DB}" ]; then
