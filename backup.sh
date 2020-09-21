@@ -1,23 +1,30 @@
-#!/bin/sh
+#!/usr/bin/env sh
 
+
+if [ -t 1 ]; then
+    INTERACTIVE=1
+else
+    INTERACTIVE=0
+fi
 
 # All (good?) defaults
-VERBOSE=0
-KEEP=""
-HOST=localhost
-PORT=5432
-USER=postgres
-PASSWORD=""
-PASSWORDFILE=""
-DESTINATION="."
-NAME="%Y%m%d-%H%M%S.sql"
-PENDING=".pending"
-DB=""
-THEN=""
-OUTPUT="sql"
+PGBACKUP_VERBOSE=${PGBACKUP_VERBOSE:-0}
+PGBACKUP_KEEP=${PGBACKUP_KEEP:-""}
+PGBACKUP_HOST=${PGBACKUP_HOST:-localhost}
+PGBACKUP_PORT=${PGBACKUP_PORT:-5432}
+PGBACKUP_USER=${PGBACKUP_USER:-postgres}
+PGBACKUP_PASSWORD=${PGBACKUP_PASSWORD:-""}
+PGBACKUP_PASSWORDFILE=${PGBACKUP_PASSWORDFILE:-""}
+PGBACKUP_DESTINATION=${PGBACKUP_DESTINATION:-"."}
+PGBACKUP_NAME=${PGBACKUP_NAME:-"%Y%m%d-%H%M%S.sql"}
+PGBACKUP_PENDING=${PGBACKUP_PENDING:-".pending"}
+PGBACKUP_DB=${PGBACKUP_DB:-""}
+PGBACKUP_THEN=${PGBACKUP_THEN:-""}
+PGBACKUP_OUTPUT=${PGBACKUP_OUTPUT:-"sql"}
 
 # Dynamic vars
-cmdname=$(basename "${0}")
+cmdname=$(basename "$(readlink -f "$0")")
+appname=${cmdname%.*}
 
 # Print usage on stderr and exit
 usage() {
@@ -54,47 +61,33 @@ USAGE
 while getopts ":k:h:p:u:w:d:n:b:vt:W:o:P:" opt; do
     case $opt in
         k)
-            KEEP="$OPTARG"
-            ;;
+            PGBACKUP_KEEP="$OPTARG";;
         u)
-            USER="$OPTARG"
-            ;;
+            PGBACKUP_USER="$OPTARG";;
         w)
-            PASSWORD="$OPTARG"
-            ;;
+            PGBACKUP_PASSWORD="$OPTARG";;
         W)
-            PASSWORDFILE="$OPTARG"
-            ;;
+            PGBACKUP_PASSWORDFILE="$OPTARG";;
         h)
-            HOST="$OPTARG"
-            ;;
+            PGBACKUP_HOST="$OPTARG";;
         p)
-            PORT="$OPTARG"
-            ;;
+            PGBACKUP_PORT="$OPTARG";;
         k)
-            KEEP="$OPTARG"
-            ;;
+            PGBACKUP_KEEP="$OPTARG";;
         d)
-            DESTINATION="$OPTARG"
-            ;;
+            PGBACKUP_DESTINATION="$OPTARG";;
         n)
-            NAME="$OPTARG"
-            ;;
+            PGBACKUP_NAME="$OPTARG";;
         b)
-            DB="$OPTARG"
-            ;;
+            PGBACKUP_DB="$OPTARG";;
         v)
-            VERBOSE=1
-            ;;
+            PGBACKUP_VERBOSE=1;;
         t)
-            THEN="$OPTARG"
-            ;;
+            PGBACKUP_THEN="$OPTARG";;
         o)
-            OUTPUT="$OPTARG"
-            ;;
+            PGBACKUP_OUTPUT="$OPTARG";;
         P)
-            PENDING="$OPTARG"
-            ;;
+            PGBACKUP_PENDING="$OPTARG";;
         \?)
             echo "Invalid option: $opt" >& 2
             usage 1
@@ -107,96 +100,120 @@ while getopts ":k:h:p:u:w:d:n:b:vt:W:o:P:" opt; do
 done
 shift $((OPTIND-1))
 
-# Returns absolute path for file, from: https://stackoverflow.com/a/20500246
-abspath() {
-    cd "$(dirname "$1")"
-    printf "%s/%s\n" "$(pwd)" "$(basename "$1")"
-    cd "$OLDPWD"
+# Colourisation support for logging and output.
+_colour() {
+    if [ "$INTERACTIVE" = "1" ]; then
+        printf '\033[1;31;'${1}'m%b\033[0m' "$2"
+    else
+        printf -- "%b" "$2"
+    fi
 }
+green() { _colour "32" "$1"; }
+red() { _colour "40" "$1"; }
+yellow() { _colour "33" "$1"; }
+blue() { _colour "34" "$1"; }
 
+# Conditional logging
 log() {
-    local txt=$1
-
-    if [ "$VERBOSE" == "1" ]; then
-        echo "$txt"
+    if [ "$PGBACKUP_VERBOSE" = "1" ]; then
+        echo "[$(blue "$appname")] [$(yellow info)] [$(date +'%Y%m%d-%H%M%S')] $1" >&2
     fi
 }
 
-csv_dump() {
-    local db=$1
+warn() {
+    echo "[$(blue "$appname")] [$(red WARN)] [$(date +'%Y%m%d-%H%M%S')] $1" >&2
+}
 
-    log "Starting $OUTPUT backup of database $db to $FILE"
-    mkdir -p ${DESTINATION}/$FILE/$db
-    TABLES=$(echo "SELECT table_schema || '.' || table_name FROM information_schema.tables WHERE table_type = 'BASE TABLE' AND table_schema NOT IN ('pg_catalog', 'information_schema');" | psql -h $HOST -p $PORT -U $USER -d $db -q -t)
+csv_dump() {
+    log "Starting $PGBACKUP_OUTPUT backup of database $1 to $FILE"
+    mkdir -p "${PGBACKUP_DESTINATION}/$FILE/$1"
+    TABLES=$(   echo "SELECT table_schema || '.' || table_name FROM information_schema.tables WHERE table_type = 'BASE TABLE' AND table_schema NOT IN ('pg_catalog', 'information_schema');" |
+                psql    -h "$PGBACKUP_HOST" \
+                        -p "$PGBACKUP_PORT" \
+                        -U "$PGBACKUP_USER" \
+                        -d "$db" \
+                        -q \
+                        -t)
     for table in $TABLES; do
-        DST=${DESTINATION}/$FILE/$db/${table}.csv
+        DST=${PGBACKUP_DESTINATION}/$FILE/$1/${table}.csv
         log "Dumping $table to $DST"
-        echo "COPY $table TO STDOUT WITH CSV HEADER;" | psql -h $HOST -p $PORT -U $USER -d $db > $DST
+        printf "COPY %s TO STDOUT WITH CSV HEADER;\n" "$table" |
+        psql    -h "$PGBACKUP_HOST" \
+                -p "$PGBACKUP_PORT" \
+                -U "$PGBACKUP_USER" \
+                -d "$1" > "$DST"
     done
 }
 
-if [ -n "$PASSWORDFILE" ]; then
-    PASSWORD=$(cat $PASSWORDFILE)
+if [ -n "$PGBACKUP_PASSWORDFILE" ]; then
+    PGBACKUP_PASSWORD=$(cat "$PGBACKUP_PASSWORDFILE")
 fi
-export PGPASSWORD=$PASSWORD
-FILE=$(date +$NAME)
+export PGPASSWORD=$PGBACKUP_PASSWORD
+FILE=$(date +"$PGBACKUP_NAME")
 
-if [ "$OUTPUT" = "sql" ]; then
+if [ "$PGBACKUP_OUTPUT" = "sql" ]; then
     # Decide name of destination file, this takes into account the pending
     # extension, if relevant.
-    if [ -n "${PENDING}" ]; then
-        DSTFILE=${FILE}.${PENDING##.}
+    if [ -n "${PGBACKUP_PENDING}" ]; then
+        DSTFILE=${FILE}.${PGBACKUP_PENDING##.}
     else
         DSTFILE=${FILE}
     fi
 
     # Dump one or all database to the destination file.
-    if [ -z "${DB}" ]; then
-        log "Starting $OUTPUT backup of all databases to $FILE"
-        CMD="pg_dumpall -h $HOST -p $PORT -U $USER -w -f ${DESTINATION}/$DSTFILE"
+    if [ -z "${PGBACKUP_DB}" ]; then
+        log "Starting $PGBACKUP_OUTPUT backup of all databases to $FILE"
+        CMD=pg_dumpall
     else 
-        log "Starting $OUTPUT backup of database $DB to $FILE"
-        CMD="pg_dump -h $HOST -p $PORT -U $USER -w -f ${DESTINATION}/$DSTFILE $DB"
+        log "Starting $PGBACKUP_OUTPUT backup of database $PGBACKUP_DB to $FILE"
+        CMD=pg_dump 
     fi
 
     # Install (pending) backup file into proper name if relevant, or remove it
     # from disk.
-    if $CMD; then
-        if [ -n "${PENDING}" ]; then
-            mv -f "${DESTINATION}/${DSTFILE}" "${DESTINATION}/${FILE}"
+    if $CMD \
+            -h "$PGBACKUP_HOST" \
+            -p "$PGBACKUP_PORT" \
+            -U "$PGBACKUP_USER" \
+            -w \
+            -f "${PGBACKUP_DESTINATION}/$DSTFILE" \
+            "$PGBACKUP_DB"; then
+        if [ -n "${PGBACKUP_PENDING}" ]; then
+            mv -f "${PGBACKUP_DESTINATION}/${DSTFILE}" "${PGBACKUP_DESTINATION}/${FILE}"
         fi
         log "Backup done"
     else
-        echo "Could not create backup!" >& 2
-        rm -rf ${DESTINATION}/$DSTFILE
+        warn "Could not create backup!"
+        rm -rf "${PGBACKUP_DESTINATION:?}/$DSTFILE"
     fi
-elif [ "$OUTPUT" = "csv" ]; then
-    if [ -z "${DB}" ]; then
-        log "Starting $OUTPUT backup of all databases to $FILE"
-        DBS=$(psql -h $HOST -p $PORT -U $USER -l -t|cut -d "|" -f 1| sed "s/^\s*//g")
-        for db in $DBS; do
+elif [ "$PGBACKUP_OUTPUT" = "csv" ]; then
+    if [ -z "${PGBACKUP_DB}" ]; then
+        log "Starting $PGBACKUP_OUTPUT backup of all databases to $FILE"
+        PGBACKUP_DBS=$(psql -h "$PGBACKUP_HOST" -p "$PGBACKUP_PORT" -U "$PGBACKUP_USER "-l -t|cut -d "|" -f 1| sed "s/^\s*//g")
+        for db in $PGBACKUP_DBS; do
             if [ -n "$db" ]; then
-                csv_dump $db
+                csv_dump "$db"
             fi
         done
     else
-        csv_dump $DB
+        csv_dump "$PGBACKUP_DB"
     fi
 fi
 
-if [ -n "${KEEP}" ]; then
-    while [ $(ls $DESTINATION -1 | wc -l) -gt $KEEP ]; do
-        DELETE=$(ls $DESTINATION -1 | sort | head -n 1)
+if [ -n "${PGBACKUP_KEEP}" ]; then
+    # shellcheck disable=SC2012
+    while [ "$(ls "$PGBACKUP_DESTINATION" -1 | wc -l)" -gt "$PGBACKUP_KEEP" ]; do
+        DELETE=$(ls "$PGBACKUP_DESTINATION" -1 | sort | head -n 1)
         log "Removing old backup $DELETE"
-        rm -rf ${DESTINATION}/$DELETE
+        rm -rf "${PGBACKUP_DESTINATION:?}/$DELETE"
     done
 fi
 
-if [ -n "${THEN}" ]; then
-    log "Executing ${THEN}"
-    if [ -e ${DESTINATION}/$FILE ]; then
-        eval "${THEN}" ${DESTINATION}/$FILE
+if [ -n "${PGBACKUP_THEN}" ]; then
+    log "Executing ${PGBACKUP_THEN}"
+    if [ -f "${PGBACKUP_DESTINATION}/$FILE" ]; then
+        eval "${PGBACKUP_THEN}" "${PGBACKUP_DESTINATION}/$FILE"
     else
-        eval "${THEN}"
+        eval "${PGBACKUP_THEN}"
     fi
 fi
