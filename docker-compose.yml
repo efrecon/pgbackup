@@ -59,8 +59,8 @@ services:
     volumes:
       - pgbackup:/backup
     build: .
-    entrypoint: "/usr/local/bin/backup.sh"
     command: >-
+      backup
       -h "db"
       -u "postgres"
       -w "J4ekK3QFqBHpgq4XyBEJ7ygL"
@@ -93,8 +93,8 @@ services:
       - pgbackup:/mnt/src:ro
       - webdav:/mnt/dst
     build: .
-    entrypoint: "/usr/local/bin/offsite.sh"
     command: >-
+      offsite
       -d /mnt/dst/backup/db/
       -c 9
       -w "cGm9rqb9sutjvh4XYXGTgTJp"
