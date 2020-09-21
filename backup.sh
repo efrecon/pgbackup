@@ -30,7 +30,7 @@ appname=${cmdname%.*}
 usage() {
   exitcode="$1"
   cat << USAGE >&2
-  
+
 Description:
   $cmdname will backup one or all PostgreSQL databases at a given (remote)
   host, and rotate dumps to keep disk usage under control.
@@ -56,53 +56,85 @@ USAGE
   exit "$exitcode"
 }
 
+# Parse options
+while [ $# -gt 0 ]; do
+    case "$1" in
+        -k | --keep)
+            PGBACKUP_KEEP=$2; shift 2;;
+        --keep=*)
+            PGBACKUP_KEEP="${1#*=}"; shift 1;;
 
-# Parse options 
-while getopts ":k:h:p:u:w:d:n:b:vt:W:o:P:" opt; do
-    case $opt in
-        k)
-            PGBACKUP_KEEP="$OPTARG";;
-        u)
-            PGBACKUP_USER="$OPTARG";;
-        w)
-            PGBACKUP_PASSWORD="$OPTARG";;
-        W)
-            PGBACKUP_PASSWORDFILE="$OPTARG";;
-        h)
-            PGBACKUP_HOST="$OPTARG";;
-        p)
-            PGBACKUP_PORT="$OPTARG";;
-        k)
-            PGBACKUP_KEEP="$OPTARG";;
-        d)
-            PGBACKUP_DESTINATION="$OPTARG";;
-        n)
-            PGBACKUP_NAME="$OPTARG";;
-        b)
-            PGBACKUP_DB="$OPTARG";;
-        v)
-            PGBACKUP_VERBOSE=1;;
-        t)
-            PGBACKUP_THEN="$OPTARG";;
-        o)
-            PGBACKUP_OUTPUT="$OPTARG";;
-        P)
-            PGBACKUP_PENDING="$OPTARG";;
-        \?)
-            echo "Invalid option: $opt" >& 2
-            usage 1
-            ;;
-        :)
-            echo "Option $opt requires an argument" >& 2
-            usage 1
-            ;;
+        -u | --user | --username)
+            PGBACKUP_USER=$2; shift 2;;
+        --user=* | --username=*)
+            PGBACKUP_USER="${1#*=}"; shift 1;;
+
+        -w | --password)
+            PGBACKUP_PASSWORD=$2; shift 2;;
+        --password=*)
+            PGBACKUP_PASSWORD="${1#*=}"; shift 1;;
+
+        -W | --password-file)
+            PGBACKUP_PASSWORDFILE=$2; shift 2;;
+        --password-file=*)
+            PGBACKUP_PASSWORDFILE="${1#*=}"; shift 1;;
+
+        -h | --host)
+            PGBACKUP_HOST=$2; shift 2;;
+        --host=*)
+            PGBACKUP_HOST="${1#*=}"; shift 1;;
+
+        -p | --port)
+            PGBACKUP_PORT=$2; shift 2;;
+        --port=*)
+            PGBACKUP_PORT="${1#*=}"; shift 1;;
+
+        -d | --dest | --destination)
+            PGBACKUP_DESTINATION=$2; shift 2;;
+        --dest=* | --destination=*)
+            PGBACKUP_DESTINATION="${1#*=}"; shift 1;;
+
+        -n | --name)
+            PGBACKUP_NAME=$2; shift 2;;
+        --name=*)
+            PGBACKUP_NAME="${1#*=}"; shift 1;;
+
+        -b | --db | --database)
+            PGBACKUP_DB=$2; shift 2;;
+        --db=* | --database=*)
+            PGBACKUP_DB="${1#*=}"; shift 1;;
+
+        -v | --verbose)
+            PGBACKUP_VERBOSE=1; shift 1;;
+
+        -t | --then)
+            PGBACKUP_THEN=$2; shift 2;;
+        --then=*)
+            PGBACKUP_THEN="${1#*=}"; shift 1;;
+
+        -o | --output)
+            PGBACKUP_OUTPUT=$2; shift 2;;
+        --output=*)
+            PGBACKUP_OUTPUT="${1#*=}"; shift 1;;
+
+        -P | --pending)
+            PGBACKUP_PENDING=$2; shift 2;;
+        --pending=*)
+            PGBACKUP_PENDING="${1#*=}"; shift 1;;
+
+        -\? | --help)
+            usage 0;;
+        --)
+            shift; break;;
+        -*)
+            echo "Unknown option: $1 !" >&2 ; usage 1;;
     esac
 done
-shift $((OPTIND-1))
 
 # Colourisation support for logging and output.
 _colour() {
     if [ "$INTERACTIVE" = "1" ]; then
+        # shellcheck disable=SC2086
         printf '\033[1;31;'${1}'m%b\033[0m' "$2"
     else
         printf -- "%b" "$2"
@@ -164,9 +196,9 @@ if [ "$PGBACKUP_OUTPUT" = "sql" ]; then
     if [ -z "${PGBACKUP_DB}" ]; then
         log "Starting $PGBACKUP_OUTPUT backup of all databases to $FILE"
         CMD=pg_dumpall
-    else 
+    else
         log "Starting $PGBACKUP_OUTPUT backup of database $PGBACKUP_DB to $FILE"
-        CMD=pg_dump 
+        CMD=pg_dump
     fi
 
     # Install (pending) backup file into proper name if relevant, or remove it
@@ -177,7 +209,7 @@ if [ "$PGBACKUP_OUTPUT" = "sql" ]; then
             -U "$PGBACKUP_USER" \
             -w \
             -f "${PGBACKUP_DESTINATION}/$DSTFILE" \
-            "$PGBACKUP_DB"; then
+            $PGBACKUP_DB; then
         if [ -n "${PGBACKUP_PENDING}" ]; then
             mv -f "${PGBACKUP_DESTINATION}/${DSTFILE}" "${PGBACKUP_DESTINATION}/${FILE}"
         fi

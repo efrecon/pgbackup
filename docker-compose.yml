@@ -58,6 +58,7 @@ services:
     image: efrecon/pgbackup
     volumes:
       - pgbackup:/backup
+    build: .
     entrypoint: "/usr/local/bin/backup.sh"
     command: >-
       -h "db"
@@ -91,17 +92,19 @@ services:
     volumes:
       - pgbackup:/mnt/src:ro
       - webdav:/mnt/dst
-    entrypoint: "/usr/local/bin/offline.sh"
+    build: .
+    entrypoint: "/usr/local/bin/offsite.sh"
     command: >-
       -d /mnt/dst/backup/db/
       -c 9
-      -p "cGm9rqb9sutjvh4XYXGTgTJp"
+      -w "cGm9rqb9sutjvh4XYXGTgTJp"
       -k 20
       -v
       -t "sh -c \"while true ; do sleep 1 ; done\""
       /mnt/src/*.sql
     restart: on-failure
     depends_on:
+      - pgbackup
       - db
     logging:
       driver: "json-file"

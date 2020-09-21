@@ -1,21 +1,29 @@
-#!/bin/sh
+#!/usr/bin/env sh
+
+if [ -t 1 ]; then
+    INTERACTIVE=1
+else
+    INTERACTIVE=0
+fi
 
 # All (good?) defaults
-VERBOSE=0
-KEEP=""
-DESTINATION="."
-COMPRESS=0
-THEN=""
-PASSWORD=""
+PGBACKUP_VERBOSE=${PGBACKUP_VERBOSE:-0}
+PGBACKUP_KEEP=${PGBACKUP_KEEP:-""}
+PGBACKUP_DESTINATION=${PGBACKUP_DESTINATION:-"."}
+PGBACKUP_COMPRESS=${PGBACKUP_COMPRESS:-0}
+PGBACKUP_THEN=${PGBACKUP_THEN:-""}
+PGBACKUP_PASSWORD=${PGBACKUP_PASSWORD:-""}
+PGBACKUP_PASSWORDFILE=${PGBACKUP_PASSWORDFILE:-""}
 
 # Dynamic vars
-cmdname=$(basename "${0}")
+cmdname=$(basename "$(readlink -f "$0")")
+appname=${cmdname%.*}
 
 # Print usage on stderr and exit
 usage() {
   exitcode="$1"
   cat << USAGE >&2
-  
+
 Description:
   $cmdname will compress the latest file matching a pattern, compress it,
   move it to a destination directory and rotate files in this directory
@@ -37,100 +45,132 @@ USAGE
   exit "$exitcode"
 }
 
+# Parse options
+while [ $# -gt 0 ]; do
+    case "$1" in
+        -k | --keep)
+            PGBACKUP_KEEP=$2; shift 2;;
+        --keep=*)
+            PGBACKUP_KEEP="${1#*=}"; shift 1;;
 
-# Parse options 
-while getopts ":k:s:d:c:vt:w:W:" opt; do
-    case $opt in
-        k)
-            KEEP="$OPTARG"
-            ;;
-        d)
-            DESTINATION="$OPTARG"
-            ;;
-        c)
-            COMPRESS="$OPTARG"
-            ;;
-        v)
-            VERBOSE=1
-            ;;
-        t)
-            THEN="$OPTARG"
-            ;;
-        w)
-            PASSWORD="$OPTARG"
-            ;;
-        W)
-            PASSWORD=$(cat "$OPTARG")
-            ;;
-        \?)
-            echo "Invalid option: $opt" >& 2
-            usage 1
-            ;;
-        :)
-            echo "Option $opt requires an argument" >& 2
-            usage 1
-            ;;
+        -w | --password)
+            PGBACKUP_PASSWORD=$2; shift 2;;
+        --password=*)
+            PGBACKUP_PASSWORD="${1#*=}"; shift 1;;
+
+        -W | --password-file)
+            PGBACKUP_PASSWORDFILE=$2; shift 2;;
+        --password-file=*)
+            PGBACKUP_PASSWORDFILE="${1#*=}"; shift 1;;
+
+        -d | --dest | --destination)
+            PGBACKUP_DESTINATION=$2; shift 2;;
+        --dest=* | --destination=*)
+            PGBACKUP_DESTINATION="${1#*=}"; shift 1;;
+
+        -c | --compress | --level)
+            PGBACKUP_COMPRESS=$2; shift 2;;
+        --compress=* | --level=*)
+            PGBACKUP_COMPRESS="${1#*=}"; shift 1;;
+
+        -t | --then)
+            PGBACKUP_THEN=$2; shift 2;;
+        --then=*)
+            PGBACKUP_THEN="${1#*=}"; shift 1;;
+
+        -v | --verbose)
+            PGBACKUP_VERBOSE=1; shift 1;;
+
+        -\? | --help)
+            usage 0;;
+        --)
+            shift; break;;
+        -*)
+            echo "Unknown option: $1 !" >&2 ; usage 1;;
+        *)
+            break;;
     esac
 done
-shift $((OPTIND-1))
 
-if [ $# -eq 0 ]; then
-    echo "You need to specify sources to copy for offline backup" >& 2
+# Colourisation support for logging and output.
+_colour() {
+    if [ "$INTERACTIVE" = "1" ]; then
+        # shellcheck disable=SC2086
+        printf '\033[1;31;'${1}'m%b\033[0m' "$2"
+    else
+        printf -- "%b" "$2"
+    fi
+}
+green() { _colour "32" "$1"; }
+red() { _colour "40" "$1"; }
+yellow() { _colour "33" "$1"; }
+blue() { _colour "34" "$1"; }
+
+# Conditional logging
+log() {
+    if [ "$PGBACKUP_VERBOSE" = "1" ]; then
+        echo "[$(blue "$appname")] [$(yellow info)] [$(date +'%Y%m%d-%H%M%S')] $1" >&2
+    fi
+}
+
+warn() {
+    echo "[$(blue "$appname")] [$(red WARN)] [$(date +'%Y%m%d-%H%M%S')] $1" >&2
+}
+
+if [ "$#" -eq "0" ]; then
+    warn "You need to specify sources to copy for offline backup"
     exit 1
 fi
 
 # Decide upon which compressor to use. Prefer zip to be able to encrypt
 ZEXT=
 COMPRESSOR=
-ZIP=$(which zip)
-if [ -n "${ZIP}" ]; then
+ZIP=$(command -v zip)
+if [ -n "$ZIP" ]; then
     ZEXT="zip"
-    COMPRESSOR=${ZIP}
+    COMPRESSOR=$ZIP
 else
-    GZIP=$(which gzip)
-    if [ -n "${GZIP}" ]; then
+    GZIP=$(command -v gzip)
+    if [ -n "$GZIP" ]; then
         ZEXT="gz"
-        COMPRESSOR=${GZIP}
+        COMPRESSOR=$GZIP
     fi
 fi
+log "Will use $COMPRESSOR for compressing, extension: $ZEXT"
 
-# Conditional logging
-log() {
-    local txt=$1
-
-    if [ "$VERBOSE" == "1" ]; then
-        echo "$txt"
-    fi
-}
+if [ -n "$PGBACKUP_PASSWORDFILE" ]; then
+    PGBACKUP_PASSWORD=$(cat "$PGBACKUP_PASSWORDFILE")
+fi
 
 # Create destination directory if it does not exist (including all leading
 # directories in the path)
-if [ ! -d "${DESTINATION}" ]; then
-    log "Creating destination directory ${DESTINATION}"
-    mkdir -p "${DESTINATION}"
+if [ ! -d "$PGBACKUP_DESTINATION" ]; then
+    log "Creating destination directory $PGBACKUP_DESTINATION"
+    mkdir -p "$PGBACKUP_DESTINATION"
 fi
 
 # Create temporary directory for storage of compressed and encrypted files.
 TMPDIR=$(mktemp -d -t offline.XXXXXX)
 
-LATEST=$(ls $@ -1 | sort | tail -n 1)
+# shellcheck disable=SC2012
+LATEST=$(ls "$@" -1 | sort | tail -n 1)
 if [ -n "$LATEST" ]; then
-    if [ "$COMPRESS" -gt "0" -a -n "$COMPRESSOR" ]; then
-        ZTGT=${TMPDIR}/$(basename $LATEST).${ZEXT}
+    if [ "$PGBACKUP_COMPRESS" -gt "0" ] && [ -n "$COMPRESSOR" ]; then
+        ZTGT=${TMPDIR}/$(basename "$LATEST").${ZEXT}
         SRC=
         log "Compressing $LATEST to $ZTGT"
         case "$ZEXT" in
             gz)
-                gzip -${COMPRESS} -c ${LATEST} > ${ZTGT}
+                gzip -"$PGBACKUP_COMPRESS" -c "$LATEST" > "$ZTGT"
                 SRC="$ZTGT"
                 ;;
             zip)
                 # ZIP in directory of latest file to have relative directories
                 # stored in the ZIP file
                 cwd=$(pwd)
-                cd $(dirname ${LATEST})
-                zip -${COMPRESS} -P ${PASSWORD} ${ZTGT} $(basename ${LATEST})
-                cd ${cwd}
+                cd "$(dirname "${LATEST}")" || exit
+                zip -"$PGBACKUP_COMPRESS" -P "$PGBACKUP_PASSWORD" "$ZTGT" "$(basename "$LATEST")"
+                cd "${cwd}" || exit
                 SRC="$ZTGT"
                 ;;
         esac
@@ -138,28 +178,29 @@ if [ -n "$LATEST" ]; then
         SRC="$LATEST"
     fi
 
-    if [ -n "${SRC}" ]; then
-        log "Copying ${SRC} to ${DESTINATION}"
-        cp ${SRC} ${DESTINATION}
+    if [ -n "$SRC" ]; then
+        log "Copying ${SRC} to $PGBACKUP_DESTINATION"
+        cp "$SRC" "$PGBACKUP_DESTINATION"
     fi
 fi
 
-if [ -n "${KEEP}" ]; then
-    while [ $(ls $DESTINATION -1 | wc -l) -gt $KEEP ]; do
-        DELETE=$(ls $DESTINATION -1 | sort | head -n 1)
+if [ -n "$PGBACKUP_KEEP" ]; then
+    # shellcheck disable=SC2046,SC2012
+    while [ $(ls "$PGBACKUP_DESTINATION" -1 | wc -l) -gt "$PGBACKUP_KEEP" ]; do
+        DELETE=$(ls "$PGBACKUP_DESTINATION" -1 | sort | head -n 1)
         log "Removing old copies $DELETE"
-        rm -rf ${DESTINATION}/$DELETE
+        rm -rf "${PGBACKUP_DESTINATION:?}/$DELETE"
     done
 fi
 
 # Cleanup temporary directory
-rm -rf $TMPDIR
+rm -rf "$TMPDIR"
 
-if [ -n "${THEN}" ]; then
-    log "Executing ${THEN}"
-    if [ -e ${DESTINATION}/$(basename ${SRC}) ]; then
-        eval "${THEN}" ${DESTINATION}/$(basename ${SRC})
+if [ -n "$PGBACKUP_THEN" ]; then
+    log "Executing $PGBACKUP_THEN"
+    if [ -f "${PGBACKUP_DESTINATION}/$(basename "${SRC}")" ]; then
+        eval "$PGBACKUP_THEN" "${PGBACKUP_DESTINATION}/$(basename "${SRC}")"
     else
-        eval "${THEN}"
+        eval "$PGBACKUP_THEN"
     fi
 fi
