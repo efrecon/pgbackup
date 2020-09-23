@@ -169,7 +169,8 @@ fi
 TMPDIR=$(mktemp -d -t offline.XXXXXX)
 
 # shellcheck disable=SC2012,SC2068
-LATEST=$(ls -1 $@ 2>/dev/null || true | sort | tail -n 1)
+LATEST=$(ls -1 $@ 2>/dev/null | sort | tail -n 1)
+log "$LATEST"
 if [ -n "$LATEST" ]; then
     if [ -n "$COMPRESSOR" ]; then
         ZTGT=${TMPDIR}/$(basename "$LATEST").${ZEXT}

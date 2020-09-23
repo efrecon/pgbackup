@@ -1,11 +1,11 @@
 # Simple Automated Backup Solution for PostgreSQL
 
-This project covers two intertwined usecases:
+This project covers two intertwined use cases:
 
 1. Continuous and regular dumps of one or all [PostgreSQL] databases at a given
    host in a format that permits recovery in case of disasters.  This is
-   `backup.sh`. 
-2. Continuous and regular copying of these dumps in a compressed for to a
+   `backup.sh`.
+2. Continuous and regular copying of these dumps in a compressed form to a
    (supposedly) remote directory in order to facilitate offsite backup and
    recovery in case of disasters. This is `offsite.sh`.
 
@@ -29,7 +29,7 @@ file `docker-compose.yml` starts up the following containers:
    another volume in compressed form. This could be a WebDAV mounted volume,
    even though it isn't since this is just an example.
 4. `pulse`, runs an instance of `efrecon/dockron` and will restart the two
-   previous containers from time to time so they can regularily perform their
+   previous containers from time to time so they can regularly perform their
    operations.
 
   [compose]: https://docs.docker.com/compose/
@@ -103,8 +103,23 @@ Usage:
 
 ### Docker
 
-`multi.sh` is specified as the default entrypoint for the image; it relays both scripts.  The following command would for example request `backup.sh` for help:
+`multi.sh` is specified as the default entrypoint for the image; it relays both
+scripts.  The following command would for example request `backup.sh` for help:
 
 ```Shell
 docker run -it --rm efrecon/pgbackup backup -?
 ```
+
+By default, the Docker image encapsulates `multi.sh` behind [`tini`][tini] so
+that it will be able to properly terminate sub-processes when stopping the
+container.
+
+  [tini]: https://github.com/krallin/tini
+
+In a typical Docker environment, database initialisation takes time. This means
+that depending on the database container will not be enough. The Docker image
+for this project provides a [script] aiming at waiting for the connection to the
+postgres database to be responsive. How to perform this and chain it behind
+`tini` is exemplified in the `docker-compose.yml` file.
+
+  [script]: https://gist.github.com/efrecon/86456960e2110b287632fd7f42c1cd31

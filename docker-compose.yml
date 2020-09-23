@@ -64,13 +64,20 @@ services:
     environment:
       - POSTGRES_PASSWORD=J4ekK3QFqBHpgq4XyBEJ7ygL
       - POSTGRES_USER=postgres
+    entrypoint:
+      - /sbin/tini
+      - --
     command: >-
-      backup
-      -h "db"
-      -d "/backup"
-      -k 10
-      -v
-      -t "sh -c \"while true ; do sleep 1 ; done\""
+      /usr/local/bin/wait-for.sh
+        --verbose
+        db:5432
+        --
+      /usr/local/bin/backup.sh
+        -h "db"
+        -d "/backup"
+        -k 10
+        -v
+        -t "sh -c \"while true ; do sleep 1 ; done\""
     restart: on-failure
     depends_on:
       - db
@@ -104,7 +111,7 @@ services:
       -k 20
       -v
       -t "sh -c \"while true ; do sleep 1 ; done\""
-      /mnt/src/*.sql
+      '/mnt/src/*.sql'
     restart: on-failure
     depends_on:
       - pgbackup
