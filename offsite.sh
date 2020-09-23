@@ -13,7 +13,7 @@ PGBACKUP_DESTINATION=${PGBACKUP_DESTINATION:-"."}
 PGBACKUP_COMPRESS=${PGBACKUP_COMPRESS:-0}
 PGBACKUP_THEN=${PGBACKUP_THEN:-""}
 PGBACKUP_PASSWORD=${PGBACKUP_PASSWORD:-""}
-PGBACKUP_PASSWORDFILE=${PGBACKUP_PASSWORDFILE:-""}
+PGBACKUP_PASSWORD_FILE=${PGBACKUP_PASSWORD_FILE:-""}
 
 # Dynamic vars
 cmdname=$(basename "$(readlink -f "$0")")
@@ -59,9 +59,9 @@ while [ $# -gt 0 ]; do
             PGBACKUP_PASSWORD="${1#*=}"; shift 1;;
 
         -W | --password-file)
-            PGBACKUP_PASSWORDFILE=$2; shift 2;;
+            PGBACKUP_PASSWORD_FILE=$2; shift 2;;
         --password-file=*)
-            PGBACKUP_PASSWORDFILE="${1#*=}"; shift 1;;
+            PGBACKUP_PASSWORD_FILE="${1#*=}"; shift 1;;
 
         -d | --dest | --destination)
             PGBACKUP_DESTINATION=$2; shift 2;;
@@ -117,29 +117,45 @@ warn() {
     echo "[$(blue "$appname")] [$(red WARN)] [$(date +'%Y%m%d-%H%M%S')] $1" >&2
 }
 
+# Bail out when no sources specified
 if [ "$#" -eq "0" ]; then
     warn "You need to specify sources to copy for offline backup"
     exit 1
 fi
 
-# Decide upon which compressor to use. Prefer zip to be able to encrypt
+# Bail out when specifying the password in different places.
+if [ -n "$PGBACKUP_PASSWORD_FILE" ] && [ -n "$PGBACKUP_PASSWORD" ]; then
+    warn "You can only have a source for the password, choose one of --password or --password-file!"
+    exit 1
+fi
+
+# Decide upon which compressor to use. Prefer zip to be able to encrypt. Do this
+# only if we should compress. This arranges to set the variable COMPRESSOR in
+# the only case when we should compress, and can compress.
 ZEXT=
 COMPRESSOR=
-ZIP=$(command -v zip)
-if [ -n "$ZIP" ]; then
-    ZEXT="zip"
-    COMPRESSOR=$ZIP
-else
-    GZIP=$(command -v gzip)
-    if [ -n "$GZIP" ]; then
-        ZEXT="gz"
-        COMPRESSOR=$GZIP
+if [ "$PGBACKUP_COMPRESS" -gt "0" ]; then
+    ZIP=$(command -v zip)
+    if [ -n "$ZIP" ]; then
+        ZEXT="zip"
+        COMPRESSOR=$ZIP
+    else
+        GZIP=$(command -v gzip)
+        if [ -n "$GZIP" ]; then
+            ZEXT="gz"
+            COMPRESSOR=$GZIP
+        fi
+    fi
+    if [ -n "$COMPRESSOR" ]; then
+        log "Will use $COMPRESSOR for compressing, extension: $ZEXT"
+    else
+        warn "No compression possible, could neither find zip, nor gzip binaries"
     fi
 fi
-log "Will use $COMPRESSOR for compressing, extension: $ZEXT"
 
-if [ -n "$PGBACKUP_PASSWORDFILE" ]; then
-    PGBACKUP_PASSWORD=$(cat "$PGBACKUP_PASSWORDFILE")
+# Read password from file if necessary.
+if [ -n "$PGBACKUP_PASSWORD_FILE" ]; then
+    PGBACKUP_PASSWORD=$(cat "$PGBACKUP_PASSWORD_FILE")
 fi
 
 # Create destination directory if it does not exist (including all leading
@@ -152,10 +168,10 @@ fi
 # Create temporary directory for storage of compressed and encrypted files.
 TMPDIR=$(mktemp -d -t offline.XXXXXX)
 
-# shellcheck disable=SC2012
-LATEST=$(ls "$@" -1 | sort | tail -n 1)
+# shellcheck disable=SC2012,SC2068
+LATEST=$(ls -1 $@ | sort | tail -n 1)
 if [ -n "$LATEST" ]; then
-    if [ "$PGBACKUP_COMPRESS" -gt "0" ] && [ -n "$COMPRESSOR" ]; then
+    if [ -n "$COMPRESSOR" ]; then
         ZTGT=${TMPDIR}/$(basename "$LATEST").${ZEXT}
         SRC=
         log "Compressing $LATEST to $ZTGT"
