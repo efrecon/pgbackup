@@ -169,7 +169,7 @@ fi
 TMPDIR=$(mktemp -d -t offline.XXXXXX)
 
 # shellcheck disable=SC2012,SC2068
-LATEST=$(ls -1 $@ | sort | tail -n 1)
+LATEST=$(ls -1 $@ 2>/dev/null || true | sort | tail -n 1)
 if [ -n "$LATEST" ]; then
     if [ -n "$COMPRESSOR" ]; then
         ZTGT=${TMPDIR}/$(basename "$LATEST").${ZEXT}
@@ -198,6 +198,8 @@ if [ -n "$LATEST" ]; then
         log "Copying ${SRC} to $PGBACKUP_DESTINATION"
         cp "$SRC" "$PGBACKUP_DESTINATION"
     fi
+else
+    log "Nothing to copy to destination directory $PGBACKUP_DESTINATION"
 fi
 
 if [ -n "$PGBACKUP_KEEP" ]; then
