@@ -7,18 +7,20 @@ else
     INTERACTIVE=0
 fi
 
-# All (good?) defaults
+# All (good?) defaults, we are also able to pick some of the POSTGRES_ led
+# variables so as to be able to more easily share secrets with a postgres Docker
+# image.
 PGBACKUP_VERBOSE=${PGBACKUP_VERBOSE:-0}
 PGBACKUP_KEEP=${PGBACKUP_KEEP:-""}
-PGBACKUP_HOST=${PGBACKUP_HOST:-localhost}
-PGBACKUP_PORT=${PGBACKUP_PORT:-5432}
-PGBACKUP_USER=${PGBACKUP_USER:-postgres}
-PGBACKUP_PASSWORD=${PGBACKUP_PASSWORD:-""}
-PGBACKUP_PASSWORDFILE=${PGBACKUP_PASSWORDFILE:-""}
+PGBACKUP_HOST=${PGBACKUP_HOST:-${POSTGRES_HOST:-localhost}}
+PGBACKUP_PORT=${PGBACKUP_PORT:-${POSTGRES_PORT:-5432}}
+PGBACKUP_USER=${PGBACKUP_USER:-${POSTGRES_USER:-postgres}}
+PGBACKUP_PASSWORD=${PGBACKUP_PASSWORD:-${POSTGRES_PASSWORD:-""}}
+PGBACKUP_PASSWORD_FILE=${PGBACKUP_PASSWORD_FILE:-${POSTGRES_PASSWORD_FILE:-""}}
 PGBACKUP_DESTINATION=${PGBACKUP_DESTINATION:-"."}
 PGBACKUP_NAME=${PGBACKUP_NAME:-"%Y%m%d-%H%M%S.sql"}
 PGBACKUP_PENDING=${PGBACKUP_PENDING:-".pending"}
-PGBACKUP_DB=${PGBACKUP_DB:-""}
+PGBACKUP_DB=${PGBACKUP_DB:-${POSTGRES_DB:-""}}
 PGBACKUP_THEN=${PGBACKUP_THEN:-""}
 PGBACKUP_OUTPUT=${PGBACKUP_OUTPUT:-"sql"}
 
@@ -75,9 +77,9 @@ while [ $# -gt 0 ]; do
             PGBACKUP_PASSWORD="${1#*=}"; shift 1;;
 
         -W | --password-file)
-            PGBACKUP_PASSWORDFILE=$2; shift 2;;
+            PGBACKUP_PASSWORD_FILE=$2; shift 2;;
         --password-file=*)
-            PGBACKUP_PASSWORDFILE="${1#*=}"; shift 1;;
+            PGBACKUP_PASSWORD_FILE="${1#*=}"; shift 1;;
 
         -h | --host)
             PGBACKUP_HOST=$2; shift 2;;
@@ -177,8 +179,8 @@ csv_dump() {
     done
 }
 
-if [ -n "$PGBACKUP_PASSWORDFILE" ]; then
-    PGBACKUP_PASSWORD=$(cat "$PGBACKUP_PASSWORDFILE")
+if [ -n "$PGBACKUP_PASSWORD_FILE" ]; then
+    PGBACKUP_PASSWORD=$(cat "$PGBACKUP_PASSWORD_FILE")
 fi
 export PGPASSWORD=$PGBACKUP_PASSWORD
 FILE=$(date +"$PGBACKUP_NAME")
