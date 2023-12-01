@@ -1,0 +1,88 @@
+name: postgresql-client
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      PLATFORMS: linux/amd64,linux/arm64,linux/arm/v6,linux/arm/v7
+      LATEST: "15"
+    strategy:
+      fail-fast: false
+      matrix:
+        version:
+          - "12"
+          - "13"
+          - "14"
+          - "15"
+    steps:
+      -
+        name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+      -
+        name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+      -
+        name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      -
+        name: Login to Docker Hub
+        id: login
+        uses: docker/login-action@v3
+        with:
+          registry: docker.io
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      -
+        name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      -
+        name: Build and Push (latest)
+        if: matrix.version == env.LATEST
+        uses: docker/build-push-action@v5
+        with:
+          platforms: ${{ env.PLATFORMS }}
+          push: true
+          build-args: |
+            POSTGRES_VERSION=${{ matrix.version }}
+          tags: |
+            efrecon/pgbackup:${{ matrix.version }}
+            ghcr.io/efrecon/pgbackup:${{ matrix.version }}
+            efrecon/pgbackup:latest
+            ghcr.io/efrecon/pgbackup:latest
+      -
+        name: Build and Push
+        if: matrix.version != env.LATEST
+        uses: docker/build-push-action@v5
+        with:
+          platforms: ${{ env.PLATFORMS }}
+          push: true
+          build-args: |
+            POSTGRES_VERSION=${{ matrix.version }}
+          tags: |
+            efrecon/pgbackup:${{ matrix.version }}
+            ghcr.io/efrecon/pgbackup:${{ matrix.version }}
+      -
+        # Note: This uses the password, not the token as this action would
+        # otherwise not work.
+        name: Update repo description at Docker Hub
+        uses: peter-evans/dockerhub-description@v3
+        if: steps.login.outcome == 'success'
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_PASSWORD }}
+          repository: ${{ github.repository }}
+          short-description: >-
+            Dockerized local and offline backing up of PostgresQL with
+            rotation and compression.
