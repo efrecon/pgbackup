@@ -10,6 +10,9 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      PLATFORMS: linux/amd64,linux/arm64,linux/arm/v6,linux/arm/v7
+      LATEST: "15"
     strategy:
       fail-fast: false
       matrix:
@@ -45,10 +48,25 @@ jobs:
         name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
       -
-        name: Build and Push
+        name: Build and Push (latest)
+        if: matrix.version == env.LATEST
         uses: docker/build-push-action@v5
         with:
-          platforms: linux/amd64,linux/arm64,linux/arm/v6,linux/arm/v7
+          platforms: ${{ env.PLATFORMS }}
+          push: true
+          build-args: |
+            POSTGRES_VERSION=${{ matrix.version }}
+          tags: |
+            efrecon/pgbackup:${{ matrix.version }}
+            ghcr.io/efrecon/pgbackup:${{ matrix.version }}
+            efrecon/pgbackup:latest
+            ghcr.io/efrecon/pgbackup:latest
+      -
+        name: Build and Push
+        if: matrix.version != env.LATEST
+        uses: docker/build-push-action@v5
+        with:
+          platforms: ${{ env.PLATFORMS }}
           push: true
           build-args: |
             POSTGRES_VERSION=${{ matrix.version }}
